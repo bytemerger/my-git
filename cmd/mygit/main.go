@@ -37,30 +37,29 @@ func main() {
 		// check the flag for the command
 		if os.Args[2] == "-w" {
 			fileToHash := os.Args[3]
-			data, err := os.ReadFile(fileToHash)
+			fileData, err := os.ReadFile(fileToHash)
 			if err != nil {
 				fmt.Println(" Error reading the file current", err)
 			}
-			// build it
-			toWrite := []byte{}
-			toWrite = append(toWrite, []byte("blob ")...)
-			toWrite = append(toWrite, byte(len(data)), 0x00)
-			toWrite = append(toWrite, data...)
+			objectToWrite := []byte(fmt.Sprintf("blob %d\x00", len(fileData)))
+			objectToWrite = append(objectToWrite, fileData...)
 
 			var b bytes.Buffer
 			w := zlib.NewWriter(&b)
-			w.Write(toWrite)
+			w.Write(objectToWrite)
 			w.Close()
 
 			// what will be written to the hash
 			// create the hash
 			h := sha1.New()
-			h.Write(b.Bytes())
+			h.Write(objectToWrite)
 			hashString := fmt.Sprintf("%x", h.Sum(nil))
 
 			dir := ".git/objects/" + string(hashString[0]) + string(hashString[1])
 			os.Mkdir(dir, 0755)
 			os.WriteFile(dir+"/"+string(hashString[2:]), b.Bytes(), 0755)
+
+			fmt.Println(hashString)
 
 		}
 	case "cat-file":
