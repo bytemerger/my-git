@@ -5,6 +5,7 @@ import (
 	"compress/zlib"
 	"crypto/sha1"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -66,24 +67,24 @@ func main() {
 		if os.Args[2] == "-p" {
 			fileHash := os.Args[3]
 			// get the file
-			fileObject := ".git/objects/" + string(fileHash[0:2]) + "/" + string(fileHash[2:])
-			data, err := os.ReadFile(fileObject)
+			filePath := fmt.Sprintf(".git/objects/%v/%v", string(fileHash[0:2]), string(fileHash[2:]))
+			f, err := os.Open(filePath)
 
 			if err != nil {
-				fmt.Println("Error could not read file", err)
+				fmt.Println("Error could not open file", err)
 			}
 
-			buf := bytes.NewBuffer(data)
-			r, err := zlib.NewReader(buf)
+			defer f.Close()
+
+			r, err := zlib.NewReader(io.Reader(f))
 			if err != nil {
-				fmt.Print(err)
+				fmt.Println("Error uncompressing file")
 			}
-
-			decomBuf := bytes.Buffer{}
-			decomBuf.ReadFrom(r)
-
-			r.Close()
-			_, blob, found := bytes.Cut(decomBuf.Bytes(), []byte{0x00})
+			fileContent, err := io.ReadAll(r)
+			if err != nil {
+				fmt.Println("Error uncompressing file ", err)
+			}
+			_, blob, found := bytes.Cut(fileContent, []byte{0x00})
 
 			if found {
 				fmt.Print(string(blob))
