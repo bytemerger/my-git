@@ -133,10 +133,11 @@ func main() {
 		if err != nil {
 			fmt.Println("could not open tree hash", err)
 		}
-		decompressedFile := bytes.Buffer{}
 		f, _ := zlib.NewReader(treeFile)
-		decompressedFile.ReadFrom(f)
-		treeContent := decompressedFile.Bytes()
+		treeContent, err := io.ReadAll(f)
+		if err != nil {
+			fmt.Println("Error reading decompressed file")
+		}
 		// cut treeHeader
 		_, treeEntries, _ := bytes.Cut(treeContent, []byte{0x00})
 
