@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"compress/zlib"
+	"crypto/sha1"
 	"fmt"
 	"os"
 )
@@ -28,6 +31,64 @@ func main() {
 		}
 
 		fmt.Println("Initialized git directory")
+
+	case "hash-object":
+		// check the flag for the command
+		if os.Args[2] == "-w" {
+			fileToHash := os.Args[3]
+			data, err := os.ReadFile(fileToHash)
+			if err != nil {
+				fmt.Println(" Error reading the file current", err)
+			}
+			// build it
+			toWrite := []byte{}
+			toWrite = append(toWrite, []byte("blob ")...)
+			toWrite = append(toWrite, byte(len(data)), 0x00)
+			toWrite = append(toWrite, data...)
+
+			var b bytes.Buffer
+			w := zlib.NewWriter(&b)
+			w.Write(toWrite)
+			w.Close()
+
+			// what will be written to the hash
+			// create the hash
+			h := sha1.New()
+			h.Write(b.Bytes())
+			hashString := fmt.Sprintf("%x", h.Sum(nil))
+
+			dir := ".git/objects/" + string(hashString[0]) + string(hashString[1])
+			os.Mkdir(dir, 0755)
+			os.WriteFile(dir+"/"+string(hashString[2:]), b.Bytes(), 0755)
+
+		}
+	case "cat-file":
+		if os.Args[2] == "-p" {
+			fileHash := os.Args[3]
+			// get the file
+			fileObject := ".git/objects/" + string(fileHash[0:2]) + "/" + string(fileHash[2:])
+			data, err := os.ReadFile(fileObject)
+
+			if err != nil {
+				fmt.Println("Error could not read file", err)
+			}
+
+			buf := bytes.NewBuffer(data)
+			r, err := zlib.NewReader(buf)
+			if err != nil {
+				fmt.Print(err)
+			}
+
+			decomBuf := bytes.Buffer{}
+			decomBuf.ReadFrom(r)
+
+			r.Close()
+			_, blob, found := bytes.Cut(decomBuf.Bytes(), []byte{0x00})
+
+			if found {
+				fmt.Print(string(blob))
+			}
+		}
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
