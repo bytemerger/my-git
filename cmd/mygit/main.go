@@ -7,7 +7,39 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 )
+
+type hashType uint32
+
+const (
+	TREE hashType = 40000
+	BLOB          = 100644
+	EXEC          = 100755
+	SYM           = 120000
+)
+
+func (h hashType) String() string {
+	switch h {
+	case 40000:
+		return fmt.Sprintf("0%v %v", h, "tree")
+	case 100644:
+		return fmt.Sprintf("0%v %v", h, "blob")
+	case 100755:
+		return fmt.Sprintf("0%v %v", h, "executable")
+	case 120000:
+		return fmt.Sprintf("0%v %v", h, "symlink")
+	default:
+		return fmt.Sprintf("0%v %v", h, "unknown")
+	}
+}
+
+type TreeEntry struct {
+	mode hashType
+	hash string
+	name string
+}
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -87,6 +119,48 @@ func main() {
 
 			if found {
 				fmt.Print(string(blob))
+			}
+		}
+	case "ls-tree":
+		var treeHash string
+		if os.Args[2] == "--name-only" {
+			treeHash = os.Args[3]
+		} else {
+			treeHash = os.Args[2]
+		}
+		filePath := fmt.Sprintf(".git/objects/%v/%v", string(treeHash[0:2]), string(treeHash[2:]))
+		treeFile, err := os.Open(filePath)
+		if err != nil {
+			fmt.Println("could not open tree hash", err)
+		}
+		decompressedFile := bytes.Buffer{}
+		f, _ := zlib.NewReader(treeFile)
+		decompressedFile.ReadFrom(f)
+		treeContent := decompressedFile.Bytes()
+		// cut treeHeader
+		_, treeEntries, _ := bytes.Cut(treeContent, []byte{0x00})
+
+		remainingEnteries := treeEntries
+		entries := []TreeEntry{}
+
+		for {
+			entry := new(TreeEntry)
+			entryDes, remaining, found := bytes.Cut(remainingEnteries, []byte{0x00})
+			if !found {
+				break
+			}
+			v := strings.Split(string(entryDes), " ")
+			mode, _ := strconv.Atoi(v[0])
+			entry.mode = hashType(mode)
+			entry.name = v[1]
+			// get the first 20 bytes which is the hash
+			entry.hash = fmt.Sprintf("%x", remaining[:20])
+			remainingEnteries = remaining[20:]
+			entries = append(entries, *entry)
+		}
+		if os.Args[2] == "--name-only" {
+			for _, entry := range entries {
+				fmt.Println(entry.name)
 			}
 		}
 
