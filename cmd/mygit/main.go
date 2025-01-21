@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"compress/zlib"
 	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -164,6 +166,81 @@ func main() {
 				fmt.Println(entry.name)
 			}
 		}
+
+	case "write-tree":
+		// walk the repository to get the files and folders
+		gitObjectPath := ".git/objects"
+		var walkFiles func(path string) []byte
+		walkFiles = func(path string) []byte {
+			treeEntries := []byte{}
+			entries, err := os.ReadDir(path)
+			if err != nil {
+				fmt.Println("could not read directory")
+			}
+			for _, entry := range entries {
+				if entry.Name() == ".git" {
+					continue
+				}
+				if !entry.IsDir() {
+					// open the file
+					fileContent, err := os.ReadFile(path + "/" + entry.Name())
+					if err != nil {
+						fmt.Println("Could not open this file ", path+entry.Name())
+						continue
+					}
+					fileToWrite := fmt.Sprintf("blob %d\x00%s", len(fileContent), fileContent)
+					hash := sha1.Sum([]byte(fileToWrite))
+					hashString := hex.EncodeToString(hash[:])
+					storeDir := fmt.Sprintf("%s/%s", gitObjectPath, hashString[0:2])
+
+					// create the directory for object storage
+					if err := os.MkdirAll(storeDir, 0755); err != nil {
+						fmt.Println("Error creating tree directory:", err)
+						return nil
+					}
+					// write the file to the object folder
+					fileObject, _ := os.Create(storeDir + "/" + string(hashString[2:]))
+					defer fileObject.Close()
+
+					writer := zlib.NewWriter(io.Writer(fileObject))
+					writer.Write([]byte(fileToWrite))
+					writer.Close()
+
+					treeEntries = append(treeEntries, []byte(fmt.Sprintf("%d %s\x00", BLOB, entry.Name()))...)
+					treeEntries = append(treeEntries, hash[:]...)
+				}
+
+				if entry.IsDir() {
+					treeEntries = append(treeEntries, walkFiles(filepath.Join(path, entry.Name()))...)
+				}
+			}
+			// write the tree
+			treeContent := []byte(fmt.Sprintf("tree %d\x00", len(treeEntries)))
+			treeContent = append(treeContent, treeEntries...)
+
+			hash := sha1.Sum([]byte(treeContent))
+			hashString := hex.EncodeToString(hash[:])
+			storeDir := fmt.Sprintf("%s/%s", gitObjectPath, hashString[0:2])
+
+			if err := os.MkdirAll(storeDir, 0755); err != nil {
+				fmt.Println("Error creating tree directory:", err)
+				return nil
+			}
+			fileObject, _ := os.Create(storeDir + "/" + string(hashString[2:]))
+			defer fileObject.Close()
+
+			writer := zlib.NewWriter(io.Writer(fileObject))
+			writer.Write([]byte(treeContent))
+			writer.Close()
+
+			treeEntry := []byte(fmt.Sprintf("%d %s\x00", TREE, filepath.Base(path)))
+			treeEntry = append(treeEntry, hash[:]...)
+
+			return treeEntry
+		}
+		treeHash := walkFiles(".")
+		_, hash, _ := bytes.Cut(treeHash, []byte{0x00})
+		fmt.Printf("%x", hash)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
