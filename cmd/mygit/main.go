@@ -18,7 +18,7 @@ type hashType uint32
 
 const (
 	TREE hashType = 40000
-	BLOB          = 100644
+	BLOB hashType = 100644
 	EXEC          = 100755
 	SYM           = 120000
 )
@@ -26,15 +26,15 @@ const (
 func (h hashType) String() string {
 	switch h {
 	case 40000:
-		return fmt.Sprintf("0%v %v", h, "tree")
+		return fmt.Sprintf("0%d %s", h, "tree")
 	case 100644:
-		return fmt.Sprintf("0%v %v", h, "blob")
+		return fmt.Sprintf("%d %s", h, "blob")
 	case 100755:
-		return fmt.Sprintf("0%v %v", h, "executable")
+		return fmt.Sprintf("%d %s", h, "executable")
 	case 120000:
-		return fmt.Sprintf("0%v %v", h, "symlink")
+		return fmt.Sprintf("%d %s", h, "symlink")
 	default:
-		return fmt.Sprintf("0%v %v", h, "unknown")
+		return fmt.Sprintf("%d %s", h, "unknown")
 	}
 }
 
