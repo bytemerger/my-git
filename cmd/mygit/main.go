@@ -240,6 +240,7 @@ func main() {
 		hash := writeObject(content)
 
 		fmt.Printf("%x", hash[:])
+	case "clone":
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
