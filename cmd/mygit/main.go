@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -241,6 +242,19 @@ func main() {
 
 		fmt.Printf("%x", hash[:])
 	case "clone":
+		gitRepo := os.Args[2]
+		_ = os.Args[3]
+
+		res, err := http.Get(fmt.Sprintf("%s/info/refs?service=git-upload-pack", gitRepo))
+		if err != nil {
+			fmt.Println("could not make request", err)
+		}
+		defer res.Body.Close()
+
+		fmt.Println("Response status:", res.Status)
+
+		body, err := io.ReadAll(res.Body)
+		fmt.Println(string(body))
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
