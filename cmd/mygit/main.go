@@ -298,6 +298,18 @@ func main() {
 			fmt.Printf("%s: %s\n", key, value)
 		}
 
+		buff := new(bytes.Buffer)
+		fmt.Fprintf(buff, "0032want %s\n00000009done\n", refs["HEAD"])
+		//	buffer := bytes.NewBufferString(fmt.Sprintf("0032want %s\n00000009done\n", refs["HEAD"]))
+		res, err = http.Post(fmt.Sprintf("%s/git-upload-pack", gitRepo), "application/x-git-upload-pack-request", buff)
+		if err != nil {
+			fmt.Println("error getting ref packs")
+		}
+		response := bytes.Buffer{}
+		io.Copy(&response, res.Body)
+
+		fmt.Println(response.Bytes())
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
