@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"compress/zlib"
 	"crypto/sha1"
@@ -253,8 +254,46 @@ func main() {
 
 		fmt.Println("Response status:", res.Status)
 
-		body, err := io.ReadAll(res.Body)
-		fmt.Println(string(body))
+		refs := make(map[string]string)
+
+		scanner := bufio.NewScanner(res.Body)
+
+		// Process each line of the response
+		for scanner.Scan() {
+			line := scanner.Bytes()
+
+			// Skip lines that start with '#'
+			if len(line) > 4 && string(line[4:]) != "" && !bytes.HasPrefix(line[4:], []byte("#")) {
+				// Split the line by null byte
+				parts := bytes.Split(line[4:], []byte{0x00})
+				if len(parts) > 0 {
+					chunk2 := parts[0]
+
+					// Check if the string ends with "HEAD", then remove the first 4 characters
+					if len(chunk2) > 4 && bytes.HasSuffix(chunk2, []byte("HEAD")) {
+						chunk2 = chunk2[4:]
+					}
+
+					// Split by space to form the chunk array
+					chunk := bytes.Split(chunk2, []byte(" "))
+					if len(chunk) >= 2 {
+						// Decode chunk[0] and chunk[1] and store them in refs map
+						refs[string(chunk[1])] = string(chunk[0])
+					}
+				}
+			}
+		}
+
+		// Handle potential error from scanner
+		if err := scanner.Err(); err != nil {
+			fmt.Println("Error scanning response body:", err)
+		}
+
+		// Print the resulting map (refs)
+		for key, value := range refs {
+			fmt.Printf("%s: %s\n", key, value)
+		}
+		//fmt.Println(string(body))
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
