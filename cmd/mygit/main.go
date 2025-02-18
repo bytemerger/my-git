@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"crypto/sha1"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -301,14 +302,37 @@ func main() {
 		buff := new(bytes.Buffer)
 		fmt.Fprintf(buff, "0032want %s\n00000009done\n", refs["HEAD"])
 		//	buffer := bytes.NewBufferString(fmt.Sprintf("0032want %s\n00000009done\n", refs["HEAD"]))
-		res, err = http.Post(fmt.Sprintf("%s/git-upload-pack", gitRepo), "application/x-git-upload-pack-request", buff)
-		if err != nil {
+		packResponse, packReqErr := http.Post(fmt.Sprintf("%s/git-upload-pack", gitRepo), "application/x-git-upload-pack-request", buff)
+		if packReqErr != nil {
 			fmt.Println("error getting ref packs")
 		}
-		response := bytes.Buffer{}
-		io.Copy(&response, res.Body)
+		defer packResponse.Body.Close()
 
-		fmt.Println(response.Bytes())
+		response := bytes.Buffer{}
+		io.Copy(&response, packResponse.Body)
+		// start processing the header
+		// cut out till you get till after PACK
+		offset := bytes.Index(response.Bytes(), []byte("PACK")) + 4
+
+		packFile := response.Bytes()
+		// remove the check sum at the end of the file/ bytes not needed for processing
+		packFile = packFile[:len(packFile)-20]
+
+		// get the verions
+		version := binary.BigEndian.Uint32(packFile[offset : offset+4])
+		offset = offset + 4
+		// get the number of objects in the packfile
+		numOfObjects := binary.BigEndian.Uint32(packFile[offset : offset+4])
+
+		// start going through the objects
+		for range numOfObjects {
+
+		}
+		fmt.Println(numOfObjects)
+
+		fmt.Println(version)
+
+		//fmt.Println(string(response.Bytes()))
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
