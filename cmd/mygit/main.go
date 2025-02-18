@@ -258,6 +258,12 @@ func main() {
 
 		scanner := bufio.NewScanner(res.Body)
 
+		// Response body
+		/* 001e# service=git-upload-pack
+		0000015523f0bc3b5c7c3108e41c448f01a3db31e7064bbb HEAD[null]multi_ack thin-pack side-band side-band-64k ofs-delta shallow deepen-since deepen-not deepen-relative no-progress include-tag multi_ack_detailed allow-tip-sha1-in-want allow-reachable-sha1-in-want no-done symref=HEAD:refs/heads/master filter object-format=sha1 agent=git/github-d6c9584635a2
+		003f23f0bc3b5c7c3108e41c448f01a3db31e7064bbb refs/heads/master
+		0000 */
+
 		// Process each line of the response
 		for scanner.Scan() {
 			line := scanner.Bytes()
@@ -283,8 +289,6 @@ func main() {
 				}
 			}
 		}
-
-		// Handle potential error from scanner
 		if err := scanner.Err(); err != nil {
 			fmt.Println("Error scanning response body:", err)
 		}
@@ -293,7 +297,6 @@ func main() {
 		for key, value := range refs {
 			fmt.Printf("%s: %s\n", key, value)
 		}
-		//fmt.Println(string(body))
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
