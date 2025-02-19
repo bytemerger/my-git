@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+)
+
+type ObjectType int
+
+const (
+	OBJ_COMMIT    ObjectType = 1
+	OBJ_TREE      ObjectType = 2
+	OBJ_BLOB                 = 3
+	OBJ_TAG                  = 4
+	OBJ_OFS_DELTA            = 6
+	OBJ_REF_DELTA            = 7
 )
 
 type hashType uint32
@@ -323,10 +335,17 @@ func main() {
 		offset = offset + 4
 		// get the number of objects in the packfile
 		numOfObjects := binary.BigEndian.Uint32(packFile[offset : offset+4])
+		// increase offset for the processed bytes
+		offset = offset + 4
 
 		// start going through the objects
 		for range numOfObjects {
-
+			// get park object header
+			parkSize, objectType, used, err := parseObjectHeader(packFile[offset:])
+			if err != nil {
+				fmt.Println("There is a bad object header")
+			}
+			offset += used
 		}
 		fmt.Println(numOfObjects)
 
@@ -355,4 +374,22 @@ func writeObject(content []byte) []byte {
 	writer.Write([]byte(content))
 	writer.Close()
 	return hash[:]
+}
+
+func parseObjectHeader(data []byte) (size uint64, objectType ObjectType, used int, err error) {
+	byteData := data[used]
+	used++
+	objectType = ObjectType((byteData >> 4) & 0x7)
+	size = uint64(byteData & 0xF)
+	shift := 4
+	for byteData&0x80 != 0 {
+		if len(data) <= used || 64 <= shift {
+			return 0, ObjectType(0), 0, errors.New("bad object header")
+		}
+		byteData = data[used]
+		used++
+		size += uint64(byteData&0x7F) << shift
+		shift += 7
+	}
+	return size, objectType, used, nil
 }
