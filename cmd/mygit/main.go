@@ -29,6 +29,21 @@ const (
 	OBJ_REF_DELTA            = 7
 )
 
+func (objType ObjectType) String() string {
+	switch objType {
+	case OBJ_TREE:
+		return "tree"
+	case OBJ_COMMIT:
+		return "commit"
+	case OBJ_BLOB:
+		return "blob"
+	case OBJ_TAG:
+		return "tag"
+	default:
+		return "unknown"
+	}
+}
+
 type hashType uint32
 
 const (
@@ -257,7 +272,18 @@ func main() {
 		fmt.Printf("%x", hash[:])
 	case "clone":
 		gitRepo := os.Args[2]
-		_ = os.Args[3]
+		dir := os.Args[3]
+
+		// create the directory
+		err := os.MkdirAll(dir, 0755)
+		if err != nil {
+			panic(err)
+		}
+		// change to the new directory created to run all the other file creations
+		err = os.Chdir(dir)
+		if err != nil {
+			panic(err)
+		}
 
 		res, err := http.Get(fmt.Sprintf("%s/info/refs?service=git-upload-pack", gitRepo))
 		if err != nil {
@@ -338,6 +364,9 @@ func main() {
 		// increase offset for the processed bytes
 		offset = offset + 4
 
+		fmt.Println(numOfObjects)
+		fmt.Println(len(packFile))
+
 		// start going through the objects
 		for range numOfObjects {
 			// get park object header
@@ -346,9 +375,20 @@ func main() {
 				fmt.Println("There is a bad object header")
 			}
 			offset += used
+			if objectType == OBJ_TREE || objectType == OBJ_COMMIT || objectType == OBJ_BLOB || objectType == OBJ_TAG {
+				data, read, err := readObject(packFile[offset:])
+				offset += read
+				if err != nil {
+					fmt.Println("An error occurred while reading object ", err)
+				}
+				if int(read) != len(data) {
+					fmt.Println("there is an error with the data length")
+				}
+				_ = writeObjectWithType(data, objectType)
+			}
+			fmt.Println("this is the data we just got ", parkSize, objectType)
+			fmt.Printf("Thius is the size of the buffer processed %d\n", offset)
 		}
-		fmt.Println(numOfObjects)
-
 		fmt.Println(version)
 
 		//fmt.Println(string(response.Bytes()))
@@ -376,6 +416,16 @@ func writeObject(content []byte) []byte {
 	return hash[:]
 }
 
+func writeObjectWithType(content []byte, objectType ObjectType) []byte {
+	blob := bytes.Buffer{}
+	fmt.Fprintf(&blob, "%s %d", objectType, len(content))
+	blob.WriteByte(0)
+	blob.Write(content)
+	// Write to disk
+	hash := writeObject(blob.Bytes())
+	return hash
+}
+
 func parseObjectHeader(data []byte) (size uint64, objectType ObjectType, used int, err error) {
 	byteData := data[used]
 	used++
@@ -392,4 +442,22 @@ func parseObjectHeader(data []byte) (size uint64, objectType ObjectType, used in
 		shift += 7
 	}
 	return size, objectType, used, nil
+}
+
+func readObject(packFile []byte) (data []byte, used int, err error) {
+	reader := bytes.NewReader(packFile)
+	r, err := zlib.NewReader(reader)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer r.Close()
+
+	decompData, err := io.ReadAll(r)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	used = int(reader.Size()) - int(reader.Len())
+
+	return decompData, used, nil
 }
