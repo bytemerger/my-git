@@ -386,6 +386,19 @@ func main() {
 				}
 				_ = writeObjectWithType(data, objectType)
 			}
+			if objectType == OBJ_REF_DELTA {
+				baseObjHash := hex.EncodeToString(packFile[offset:20])
+				offset += 20
+				content, used, err := readObject(packFile[offset:])
+				if err != nil {
+					fmt.Println("There is an error reading the obj delta content")
+				}
+				offset += used
+				sourceSize, read := parseDeltaSize(packFile[offset:])
+				offset += read
+				targetSize, read := parseDeltaSize(packFile[offset:])
+
+			}
 			fmt.Println("this is the data we just got ", parkSize, objectType)
 			fmt.Printf("Thius is the size of the buffer processed %d\n", offset)
 		}
@@ -442,6 +455,21 @@ func parseObjectHeader(data []byte) (size uint64, objectType ObjectType, used in
 		shift += 7
 	}
 	return size, objectType, used, nil
+}
+
+func parseDeltaSize(packFile []byte) (int, int) {
+	size := packFile[0] & 0b01111111
+	index, off := 1, 7
+
+	for packFile[index-1]&0b10000000 > 0 { // Check if MSB is set
+		size = size | (packFile[index]&0b01111111)<<off
+		off += 7
+		index += 1
+	}
+
+	// this index is the same as the used bytes
+
+	return int(size), index
 }
 
 func readObject(packFile []byte) (data []byte, used int, err error) {
