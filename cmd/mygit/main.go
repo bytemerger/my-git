@@ -397,6 +397,9 @@ func main() {
 				sourceSize, read := parseDeltaSize(packFile[offset:])
 				offset += read
 				targetSize, read := parseDeltaSize(packFile[offset:])
+				offset += read
+
+				targetObject := []byte{}
 
 			}
 			fmt.Println("this is the data we just got ", parkSize, objectType)
