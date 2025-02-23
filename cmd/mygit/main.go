@@ -300,6 +300,8 @@ func main() {
 			panic(err)
 		}
 
+		initRepo()
+
 		res, err := http.Get(fmt.Sprintf("%s/info/refs?service=git-upload-pack", gitRepo))
 		if err != nil {
 			fmt.Println("could not make request", err)
@@ -353,6 +355,7 @@ func main() {
 		}
 
 		buff := new(bytes.Buffer)
+		//TODO: should be built with a loop for all the wants from the refs
 		fmt.Fprintf(buff, "0032want %s\n00000009done\n", refs["HEAD"])
 		//	buffer := bytes.NewBufferString(fmt.Sprintf("0032want %s\n00000009done\n", refs["HEAD"]))
 		packResponse, packReqErr := http.Post(fmt.Sprintf("%s/git-upload-pack", gitRepo), "application/x-git-upload-pack-request", buff)
@@ -372,43 +375,33 @@ func main() {
 		packFile = packFile[:len(packFile)-20]
 
 		// get the verions
-		version := binary.BigEndian.Uint32(packFile[offset : offset+4])
+		_ = binary.BigEndian.Uint32(packFile[offset : offset+4])
 		offset = offset + 4
 		// get the number of objects in the packfile
 		numOfObjects := binary.BigEndian.Uint32(packFile[offset : offset+4])
 		// increase offset for the processed bytes
 		offset = offset + 4
 
-		fmt.Println(version)
-		fmt.Println(numOfObjects)
-		fmt.Println(len(packFile))
-
 		// start going through the objects
 		for i := 0; i < int(numOfObjects); i++ {
 			// get park object header
 			_, objectType, used, err := parseObjectHeader(packFile[offset:])
-			fmt.Println("we used this amout of data ", used)
-			fmt.Println("object type ", objectType)
 			if err != nil {
 				fmt.Println("There is a bad object header")
 			}
 			offset += used
-			fmt.Println("This is the current amount of offset ", offset)
 			if objectType == OBJ_TREE || objectType == OBJ_COMMIT || objectType == OBJ_BLOB || objectType == OBJ_TAG {
-				fmt.Println("writing the object ", objectType)
-				data, read, err := readObject(packFile[offset:])
+				data, read, err := readObjectFromParkfile(packFile[offset:])
 				offset += read
 				if err != nil {
 					fmt.Println("An error occurred while reading object ", err)
 				}
-				fmt.Println("before the error number count ", i)
 				_ = writeObjectWithType(data, objectType)
 			}
 			if objectType == OBJ_REF_DELTA {
 				baseObjHash := hex.EncodeToString(packFile[offset : offset+20])
-				fmt.Println("thisi is the baseobj hash", baseObjHash)
 				offset += 20
-				content, used, err := readObject(packFile[offset:])
+				content, used, err := readObjectFromParkfile(packFile[offset:])
 				offset += used
 				if err != nil {
 					fmt.Println("There is an error reading the obj delta content")
@@ -452,7 +445,7 @@ func main() {
 						content = content[dataPtr:]
 						targetContent = append(targetContent, baseContent[baseOffset:baseOffset+int32(contentSize)]...)
 					} else {
-						size := int8(content[0])
+						size := int(content[0])
 						addition := content[1 : size+1]
 						content = content[size+1:]
 						// Append the data to targetContent
@@ -462,6 +455,9 @@ func main() {
 
 				objectType, _ := ObjectTypeFromString(baseType)
 				writeObjectWithType(targetContent, objectType)
+			}
+			if objectType == OBJ_OFS_DELTA {
+				fmt.Println("not implemented")
 			}
 		}
 		// render the files
@@ -533,7 +529,7 @@ func parseDeltaSize(packFile []byte) (int, int) {
 	return int(size), index
 }
 
-func readObject(packFile []byte) (data []byte, used int, err error) {
+func readObjectFromParkfile(packFile []byte) (data []byte, used int, err error) {
 	reader := bytes.NewReader(packFile)
 	r, err := zlib.NewReader(reader)
 	if err != nil {
@@ -598,7 +594,6 @@ func renderTree(hash string, dir string) {
 		case TREE:
 			renderTree(entry.hash, filepath.Join(dir, entry.name))
 		case BLOB:
-			fmt.Println("tring tor read object")
 			_, obj := readObjectFromHash(entry.hash)
 			_ = os.MkdirAll(dir, 0755)
 			fileObject, err := os.Create(dir + "/" + entry.name)
@@ -616,4 +611,17 @@ func renderTree(hash string, dir string) {
 		}
 	}
 
+}
+
+func initRepo() {
+	for _, dir := range []string{".git", ".git/objects", ".git/refs"} {
+		if err := os.Mkdir(dir, 0755); err != nil {
+			fmt.Printf("Error creating directory: %s\n", err)
+		}
+	}
+	headFileContents := []byte("ref: refs/heads/master\n")
+	if err := os.WriteFile(".git/HEAD", headFileContents, 0644); err != nil {
+		fmt.Printf("Error writing file: %s\n", err)
+	}
+	fmt.Println("Initialized git directory")
 }
