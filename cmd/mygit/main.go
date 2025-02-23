@@ -372,37 +372,41 @@ func main() {
 		packFile = packFile[:len(packFile)-20]
 
 		// get the verions
-		_ = binary.BigEndian.Uint32(packFile[offset : offset+4])
+		version := binary.BigEndian.Uint32(packFile[offset : offset+4])
 		offset = offset + 4
 		// get the number of objects in the packfile
 		numOfObjects := binary.BigEndian.Uint32(packFile[offset : offset+4])
 		// increase offset for the processed bytes
 		offset = offset + 4
 
+		fmt.Println(version)
 		fmt.Println(numOfObjects)
 		fmt.Println(len(packFile))
 
 		// start going through the objects
-		for range numOfObjects {
+		for i := 0; i < int(numOfObjects); i++ {
 			// get park object header
 			_, objectType, used, err := parseObjectHeader(packFile[offset:])
+			fmt.Println("we used this amout of data ", used)
+			fmt.Println("object type ", objectType)
 			if err != nil {
 				fmt.Println("There is a bad object header")
 			}
 			offset += used
+			fmt.Println("This is the current amount of offset ", offset)
 			if objectType == OBJ_TREE || objectType == OBJ_COMMIT || objectType == OBJ_BLOB || objectType == OBJ_TAG {
+				fmt.Println("writing the object ", objectType)
 				data, read, err := readObject(packFile[offset:])
 				offset += read
 				if err != nil {
 					fmt.Println("An error occurred while reading object ", err)
 				}
-				if int(read) != len(data) {
-					fmt.Println("there is an error with the data length")
-				}
+				fmt.Println("before the error number count ", i)
 				_ = writeObjectWithType(data, objectType)
 			}
 			if objectType == OBJ_REF_DELTA {
-				baseObjHash := hex.EncodeToString(packFile[offset:20])
+				baseObjHash := hex.EncodeToString(packFile[offset : offset+20])
+				fmt.Println("thisi is the baseobj hash", baseObjHash)
 				offset += 20
 				content, used, err := readObject(packFile[offset:])
 				offset += used
@@ -462,8 +466,7 @@ func main() {
 		}
 		// render the files
 		_, commit := readObjectFromHash(refs["HEAD"])
-		treeHash := fmt.Sprintf("%x", commit[5:40+5])
-		renderTree(treeHash, ".")
+		renderTree(string(commit[5:45]), ".")
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
@@ -595,13 +598,18 @@ func renderTree(hash string, dir string) {
 		case TREE:
 			renderTree(entry.hash, filepath.Join(dir, entry.name))
 		case BLOB:
+			fmt.Println("tring tor read object")
 			_, obj := readObjectFromHash(entry.hash)
-			fileObject, _ := os.Create(dir + "/" + entry.name)
+			_ = os.MkdirAll(dir, 0755)
+			fileObject, err := os.Create(dir + "/" + entry.name)
+			if err != nil {
+				fmt.Println(err)
+			}
 			defer fileObject.Close()
 
-			_, err := fileObject.Write(obj)
+			_, err = fileObject.Write(obj)
 			if err != nil {
-				fmt.Println("error while writing file")
+				fmt.Println("error while writing file", err)
 			}
 		default:
 			fmt.Println("unkown hash type")
