@@ -460,6 +460,10 @@ func main() {
 				writeObjectWithType(targetContent, objectType)
 			}
 		}
+		// render the files
+		_, commit := readObjectFromHash(refs["HEAD"])
+		treeHash := fmt.Sprintf("%x", commit[5:40+5])
+		renderTree(treeHash, ".")
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
@@ -556,7 +560,7 @@ func readObjectFromHash(hashString string) (string, []byte) {
 
 	r, err := zlib.NewReader(f)
 
-	obj, err := io.ReadAll(r)
+	obj, _ := io.ReadAll(r)
 
 	if err != nil {
 		fmt.Println("could not decompress the object")
@@ -567,5 +571,41 @@ func readObjectFromHash(hashString string) (string, []byte) {
 	objType := strings.Split(string(header), " ")
 
 	return objType[0], body
+}
+
+func renderTree(hash string, dir string) {
+	_, tree := readObjectFromHash(hash)
+
+	remainingEnteries := tree
+
+	for {
+		entry := new(TreeEntry)
+		entryDes, remaining, found := bytes.Cut(remainingEnteries, []byte{0x00})
+		if !found {
+			break
+		}
+		v := strings.Split(string(entryDes), " ")
+		mode, _ := strconv.Atoi(v[0])
+		entry.mode = hashType(mode)
+		entry.name = v[1]
+		// get the first 20 bytes which is the hash
+		entry.hash = fmt.Sprintf("%x", remaining[:20])
+		remainingEnteries = remaining[20:]
+		switch entry.mode {
+		case TREE:
+			renderTree(entry.hash, filepath.Join(dir, entry.name))
+		case BLOB:
+			_, obj := readObjectFromHash(entry.hash)
+			fileObject, _ := os.Create(dir + "/" + entry.name)
+			defer fileObject.Close()
+
+			_, err := fileObject.Write(obj)
+			if err != nil {
+				fmt.Println("error while writing file")
+			}
+		default:
+			fmt.Println("unkown hash type")
+		}
+	}
 
 }
