@@ -44,6 +44,21 @@ func (objType ObjectType) String() string {
 	}
 }
 
+func ObjectTypeFromString(s string) (ObjectType, error) {
+	switch s {
+	case "tree":
+		return OBJ_TREE, nil
+	case "commit":
+		return OBJ_COMMIT, nil
+	case "blob":
+		return OBJ_BLOB, nil
+	case "tag":
+		return OBJ_TAG, nil
+	default:
+		return 0, errors.New("unknown ObjectType: " + s)
+	}
+}
+
 type hashType uint32
 
 const (
@@ -357,7 +372,7 @@ func main() {
 		packFile = packFile[:len(packFile)-20]
 
 		// get the verions
-		version := binary.BigEndian.Uint32(packFile[offset : offset+4])
+		_ = binary.BigEndian.Uint32(packFile[offset : offset+4])
 		offset = offset + 4
 		// get the number of objects in the packfile
 		numOfObjects := binary.BigEndian.Uint32(packFile[offset : offset+4])
@@ -370,7 +385,7 @@ func main() {
 		// start going through the objects
 		for range numOfObjects {
 			// get park object header
-			parkSize, objectType, used, err := parseObjectHeader(packFile[offset:])
+			_, objectType, used, err := parseObjectHeader(packFile[offset:])
 			if err != nil {
 				fmt.Println("There is a bad object header")
 			}
@@ -390,25 +405,61 @@ func main() {
 				baseObjHash := hex.EncodeToString(packFile[offset:20])
 				offset += 20
 				content, used, err := readObject(packFile[offset:])
+				offset += used
 				if err != nil {
 					fmt.Println("There is an error reading the obj delta content")
 				}
-				offset += used
-				sourceSize, read := parseDeltaSize(packFile[offset:])
-				offset += read
-				targetSize, read := parseDeltaSize(packFile[offset:])
-				offset += read
+				contentRead := 0
+				_, read := parseDeltaSize(content)
+				contentRead += read
+				_, read = parseDeltaSize(content[contentRead:])
+				contentRead += read
 
-				targetObject := []byte{}
+				targetContent := []byte{}
+				// reassign content removing used
+				content = content[contentRead:]
 
+				baseType, baseContent := readObjectFromHash(baseObjHash)
+
+				for len(content) > 0 {
+					isCopy := content[0] & 0b10000000 // Check the MSB to determine if it's a copy command
+					if isCopy != 0 {
+						dataPtr := 1
+						var baseOffset int32 = 0
+						var contentSize int32 = 0
+
+						// First loop for decoding the offset
+						for i := 0; i < 4; i++ {
+							if content[0]&(1<<i) != 0 {
+								baseOffset |= int32(content[dataPtr]) << (i * 8)
+								dataPtr++
+							}
+						}
+
+						// Second loop for decoding the size
+						for i := 0; i < 3; i++ {
+							if content[0]&(1<<(4+i)) != 0 {
+								contentSize |= int32(content[dataPtr]) << (i * 8)
+								dataPtr++
+							}
+						}
+
+						// Slice the content to exclude the processed part
+						content = content[dataPtr:]
+						targetContent = append(targetContent, baseContent[baseOffset:baseOffset+int32(contentSize)]...)
+					} else {
+						size := int8(content[0])
+						addition := content[1 : size+1]
+						content = content[size+1:]
+						// Append the data to targetContent
+						targetContent = append(targetContent, addition...)
+					}
+				}
+
+				objectType, _ := ObjectTypeFromString(baseType)
+				writeObjectWithType(targetContent, objectType)
 			}
-			fmt.Println("this is the data we just got ", parkSize, objectType)
-			fmt.Printf("Thius is the size of the buffer processed %d\n", offset)
 		}
-		fmt.Println(version)
-
-		//fmt.Println(string(response.Bytes()))
-
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
@@ -491,4 +542,30 @@ func readObject(packFile []byte) (data []byte, used int, err error) {
 	used = int(reader.Size()) - int(reader.Len())
 
 	return decompData, used, nil
+}
+
+func readObjectFromHash(hashString string) (string, []byte) {
+	// read file
+	f, err := os.Open(fmt.Sprintf(".git/objects/%s/%s", hashString[:2], hashString[2:]))
+
+	if err != nil {
+		fmt.Println("Error could not open file", err)
+	}
+
+	defer f.Close()
+
+	r, err := zlib.NewReader(f)
+
+	obj, err := io.ReadAll(r)
+
+	if err != nil {
+		fmt.Println("could not decompress the object")
+	}
+	// get only the content
+	header, body, _ := bytes.Cut(obj, []byte{0x00})
+
+	objType := strings.Split(string(header), " ")
+
+	return objType[0], body
+
 }
